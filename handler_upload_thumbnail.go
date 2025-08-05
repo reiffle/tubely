@@ -1,10 +1,12 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	//"text/template/parse"
 
@@ -57,7 +59,6 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	fileData, err := io.ReadAll(file) // Be sure to read ALL file date into the variable, hence io.ReadAll
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't read thumbnail file", err)
 		return
@@ -73,10 +74,24 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusUnauthorized, "You are not allowed to upload a thumbnail for this video", nil)
 		return
 	}
+	requestPath := strings.Split(mediaType, "/")
+	fileExtension := requestPath[len(requestPath)-1] // Get the file extension from the media type, e.g. "image/jpeg" -> "jpeg"
+	filename := fmt.Sprintf("%s.%s", videoID, fileExtension)
+	filepath := filepath.Join(cfg.assetsRoot, filename)
+	emptyFile, err := os.Create(filepath) // Create a new empty file to copy the info into
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create thumbnail file", err)
+		return
+	}
+	defer emptyFile.Close()
+	_, err = io.Copy(emptyFile, file) // Write the file data to the new file
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't write thumbnail file", err)
+		return
+	}
 
-	data := base64.StdEncoding.EncodeToString(fileData)            // Encode the thumbnail data to base64 string
-	thumbnail := fmt.Sprintf("data:%s;base64,%s", mediaType, data) // Create a data URL for the thumbnail
-	//Could also use "github.com/vincent-petithory/dataurl" dataURL := dataurl.New(data, mimeType)
+	port := cfg.port
+	thumbnail := fmt.Sprintf("http://localhost:%s/assets/%s", port, filename)
 
 	ptrUrl := &thumbnail
 
