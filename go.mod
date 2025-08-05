@@ -13,3 +13,5 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/mattn/go-sqlite3 v1.14.24
 )
+
+//require github.com/vincent-petithory/dataurl v1.0.0 // indirect
