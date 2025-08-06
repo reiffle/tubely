@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"mime"
@@ -60,10 +62,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusBadRequest, "Couldn't parse thumbnail file type", err)
 		return
 	}
-	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Couldn't parse thumbnail file type", err)
-		return
-	}
+
 	if mediaType != "image/jpeg" && mediaType != "image/png" {
 		respondWithError(w, http.StatusBadRequest, "Invalid thumbnail file type", nil)
 		return
@@ -79,9 +78,18 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusUnauthorized, "You are not allowed to upload a thumbnail for this video", nil)
 		return
 	}
+	//Create new randome filename when uploading a thumbnail
+	newFilenameBytes := make([]byte, 32) // Generate a new random filename for the thumbnail, 32 bytes is 256 bits
+	_, err = rand.Read(newFilenameBytes) // Fill the byte slice with random data
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't generate random filename", err)
+		return
+	}
+	randvideo := base64.RawURLEncoding.EncodeToString(newFilenameBytes) // Generate a new filename for the thumbnail, e.g. "videoID.jpg"
+	//End random filename generation
 	requestPath := strings.Split(mediaType, "/")
 	fileExtension := requestPath[len(requestPath)-1] // Get the file extension from the media type, e.g. "image/jpeg" -> "jpeg"
-	filename := fmt.Sprintf("%s.%s", videoID, fileExtension)
+	filename := fmt.Sprintf("%s.%s", randvideo, fileExtension)
 	filepath := filepath.Join(cfg.assetsRoot, filename)
 	emptyFile, err := os.Create(filepath) // Create a new empty file to copy the info into
 	if err != nil {
