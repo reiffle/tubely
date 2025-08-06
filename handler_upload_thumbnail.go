@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -53,14 +54,18 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	mediaType := header.Header.Get("Content-Type") // There are three parts to *multipart.Header: Header (map), Size (int64), and Filename("string")
-	if mediaType != "image/jpeg" && mediaType != "image/png" {
-		respondWithError(w, http.StatusBadRequest, "Invalid thumbnail file type", nil)
+	content := header.Header.Get("Content-Type")      // There are three parts to *multipart.Header: Header (map), Size (int64), and Filename("string")
+	mediaType, _, err := mime.ParseMediaType(content) // Parse the media type to get the content type, e.g. "image/jpeg", and any parameters
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Couldn't parse thumbnail file type", err)
 		return
 	}
-
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't read thumbnail file", err)
+		respondWithError(w, http.StatusBadRequest, "Couldn't parse thumbnail file type", err)
+		return
+	}
+	if mediaType != "image/jpeg" && mediaType != "image/png" {
+		respondWithError(w, http.StatusBadRequest, "Invalid thumbnail file type", nil)
 		return
 	}
 	// Check if the video exists and if the user is allowed to upload a thumbnail for it
