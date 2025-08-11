@@ -1,18 +1,21 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
 
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
-
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
 type apiConfig struct {
 	db               database.Client
+	s3Client         *s3.Client // Assuming you have a type for S3 client
 	jwtSecret        string
 	platform         string
 	filepathRoot     string
@@ -24,11 +27,10 @@ type apiConfig struct {
 }
 
 func main() {
-	godotenv.Load(".env")
-
+	godotenv.Load(".env") // Load environment variables from .env file, I don't know if this is needed
 	pathToDB := os.Getenv("DB_PATH")
 	if pathToDB == "" {
-		log.Fatal("DB_URL must be set")
+		log.Fatal("DB_PATH must be set")
 	}
 
 	db, err := database.NewClient(pathToDB)
@@ -76,8 +78,15 @@ func main() {
 		log.Fatal("PORT environment variable is not set")
 	}
 
+	// Load AWS SDK configuration and create S3 client
+	s3cfg, err := config.LoadDefaultConfig(context.Background(), config.WithRegion(os.Getenv("S3_REGION")))
+	if err != nil {
+		log.Fatalf("Couldn't load AWS SDK configuration: %v", err)
+	}
+	newClient := s3.NewFromConfig(s3cfg)
 	cfg := apiConfig{
 		db:               db,
+		s3Client:         newClient, // Need to have created s3 client beforehand...can't just use a placeholder
 		jwtSecret:        jwtSecret,
 		platform:         platform,
 		filepathRoot:     filepathRoot,
@@ -116,7 +125,7 @@ func main() {
 	mux.HandleFunc("POST /admin/reset", cfg.handlerReset)
 
 	srv := &http.Server{
-		Addr:    ":" + port,
+		Addr:    "localhost:" + port, //had to add "localhost:" to the address
 		Handler: mux,
 	}
 
