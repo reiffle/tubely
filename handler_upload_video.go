@@ -55,7 +55,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	r.ParseMultipartForm(maxUploadSize)      // Parse the form data with a maximum memory limit, overflow will be stored on disk
 	file, header, err := r.FormFile("video") // read the while video file from the form data
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Couldn't get thumbnail file", err)
+		respondWithError(w, http.StatusBadRequest, "Couldn't get file", err)
 		return
 	}
 	defer file.Close() ///super important, don't forget this
@@ -99,9 +99,22 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "Couldn't seek to beginning of temp file", err)
 		return
 	}
-
+	aspectRatio, err := getVideoAspectRatio(tempVideo.Name()) // Get the aspect ratio of the video file
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't get video aspect ratio", err)
+		return
+	}
+	// Set the aspect ratio in the video metadata
+	var aspectPrefix string
+	if aspectRatio == "16:9" {
+		aspectPrefix = "landscape"
+	} else if aspectRatio == "9:16" {
+		aspectPrefix = "portrait"
+	} else {
+		aspectPrefix = "other"
+	}
 	//Create new randome filename when uploading a thumbnail
-	newFilenameBytes := make([]byte, 32) // Generate a new random filename for the thumbnail, 32 bytes is 256 bits
+	newFilenameBytes := make([]byte, 32) // Generate a new random filename for the video, 32 bytes is 256 bits
 	_, err = rand.Read(newFilenameBytes) // Fill the byte slice with random data
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't generate random filename", err)
@@ -111,7 +124,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	//End random filename generation
 	requestPath := strings.Split(mediaType, "/")
 	fileExtension := requestPath[len(requestPath)-1] // Get the file extension from the media type, e.g. "image/jpeg" -> "jpeg"
-	filename := fmt.Sprintf("%s.%s", randvideo, fileExtension)
+	filename := fmt.Sprintf("%s/%s.%s", aspectPrefix, randvideo, fileExtension)
 	s3Info := &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &filename,
