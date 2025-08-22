@@ -8,6 +8,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -53,7 +54,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 
 	r.ParseMultipartForm(maxUploadSize)      // Parse the form data with a maximum memory limit, overflow will be stored on disk
-	file, header, err := r.FormFile("video") // read the while video file from the form data
+	file, header, err := r.FormFile("video") // read the whole video file from the form data
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Couldn't get file", err)
 		return
@@ -68,7 +69,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	content := header.Header.Get("Content-Type")      // There are three parts to *multipart.Header: Header (map), Size (int64), and Filename("string")
 	mediaType, _, err := mime.ParseMediaType(content) // Parse the media type to get the content type, e.g. "image/jpeg", and any parameters
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Couldn't parse thumbnail file type", err)
+		respondWithError(w, http.StatusBadRequest, "Couldn't parse file type", err)
 		return
 	}
 
@@ -82,24 +83,37 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	defer os.Remove(tempVideo.Name())       // Clean up the temp file afterwards
-	defer tempVideo.Close()                 // defer is LIFO, so this will run before the os.Remove
 	copied, err := io.Copy(tempVideo, file) // Copy the file contents to the temp file
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't copy video file", err)
 		return
 	}
+	tempVideo.Close()
 
 	if copied != header.Size { // Make sure the copied size matches the header size
 		respondWithError(w, http.StatusInternalServerError, "Copied video file size does not match header size", nil)
 		return
 	}
 
-	_, err = tempVideo.Seek(0, io.SeekStart) // Reset the file pointer to the beginning of the file
+	fastTempVideoName, err := processVideoForFastStart(tempVideo.Name()) // Process the video to enable fast start
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't process video for fast start", err)
+		return
+	}
+	os.Remove(tempVideo.Name())                      // Remove the original temp file, we don't need it anymore
+	fastTempVideo, err := os.Open(fastTempVideoName) // Open the fast processed video file
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't open fast processed video file", err)
+		return
+	}
+	defer os.Remove(fastTempVideo.Name())        // Remove the processed file afterwards, we don't need it anymore
+	defer fastTempVideo.Close()                  // Close the processed file afterwards, we don't need it anymore
+	_, err = fastTempVideo.Seek(0, io.SeekStart) // Reset the file pointer to the beginning of the file
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't seek to beginning of temp file", err)
 		return
 	}
-	aspectRatio, err := getVideoAspectRatio(tempVideo.Name()) // Get the aspect ratio of the video file
+	aspectRatio, err := getVideoAspectRatio(fastTempVideo.Name()) // Get the aspect ratio of the video file
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't get video aspect ratio", err)
 		return
@@ -128,7 +142,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	s3Info := &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &filename,
-		Body:        tempVideo,
+		Body:        fastTempVideo,
 		ContentType: &content,
 	}
 
@@ -146,4 +160,16 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	respondWithJSON(w, http.StatusOK, video)
+}
+
+func processVideoForFastStart(filepath string) (string, error) {
+	processString := filepath + ".processing"
+	cmd := exec.Command("ffmpeg", "-i", filepath, "-c", "copy", "-movflags", "faststart", "-f", "mp4", processString)
+	err := cmd.Run()
+	if err != nil {
+		fmt.Printf("FFmpeg error: %v\n", err)
+		return "", fmt.Errorf("ffmpeg command failed: %w", err)
+	}
+	fmt.Println("FFmpeg command finished successfully!")
+	return processString, nil
 }
