@@ -15,9 +15,9 @@ import (
 
 type apiConfig struct {
 	db               database.Client
-	s3Client         *s3.Client // Assuming you have a type for S3 client
 	jwtSecret        string
 	platform         string
+	s3Client         *s3.Client
 	filepathRoot     string
 	assetsRoot       string
 	s3Bucket         string
@@ -27,7 +27,8 @@ type apiConfig struct {
 }
 
 func main() {
-	godotenv.Load(".env") // Load environment variables from .env file, I don't know if this is needed
+	godotenv.Load(".env")
+
 	pathToDB := os.Getenv("DB_PATH")
 	if pathToDB == "" {
 		log.Fatal("DB_PATH must be set")
@@ -78,17 +79,17 @@ func main() {
 		log.Fatal("PORT environment variable is not set")
 	}
 
-	// Load AWS SDK configuration and create S3 client
-	s3cfg, err := config.LoadDefaultConfig(context.Background(), config.WithRegion(os.Getenv("S3_REGION")))
+	awsCfg, err := config.LoadDefaultConfig(context.Background(), config.WithRegion(s3Region))
 	if err != nil {
-		log.Fatalf("Couldn't load AWS SDK configuration: %v", err)
+		log.Fatal(err)
 	}
-	newClient := s3.NewFromConfig(s3cfg)
+	client := s3.NewFromConfig(awsCfg)
+
 	cfg := apiConfig{
 		db:               db,
-		s3Client:         newClient, // Need to have created s3 client beforehand...can't just use a placeholder
 		jwtSecret:        jwtSecret,
 		platform:         platform,
+		s3Client:         client,
 		filepathRoot:     filepathRoot,
 		assetsRoot:       assetsRoot,
 		s3Bucket:         s3Bucket,
@@ -125,7 +126,7 @@ func main() {
 	mux.HandleFunc("POST /admin/reset", cfg.handlerReset)
 
 	srv := &http.Server{
-		Addr:    "localhost:" + port, //had to add "localhost:" to the address
+		Addr:    ":" + port,
 		Handler: mux,
 	}
 

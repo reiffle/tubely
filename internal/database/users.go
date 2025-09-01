@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
 )
 
@@ -107,7 +108,14 @@ func (c Client) CreateUser(params CreateUserParams) (*User, error) {
 		VALUES
 		    (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)
 	`
-	_, err := c.db.Exec(query, id.String(), params.Email, params.Password)
+	// go
+	hashed, err := auth.HashPassword(params.Password)
+	if err != nil {
+		return nil, err
+	}
+	// use hashed in the INSERT, not params.Password
+
+	_, err = c.db.Exec(query, id.String(), params.Email, hashed)
 	if err != nil {
 		return nil, err
 	}

@@ -85,5 +85,13 @@ func (c Client) Reset() error {
 	if _, err := c.db.Exec("DELETE FROM videos"); err != nil {
 		return fmt.Errorf("failed to reset table videos: %w", err)
 	}
+	// go
+	_, err := c.CreateUser(CreateUserParams{
+		Email:    "admin@tubely.com",
+		Password: "password",
+	})
+	if err != nil {
+		return fmt.Errorf("seed admin: %w", err)
+	}
 	return nil
 }
